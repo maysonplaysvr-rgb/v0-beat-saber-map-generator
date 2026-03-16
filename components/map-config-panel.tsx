@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
-import type { MapConfig } from '@/lib/beat-saber-generator'
+import { ENVIRONMENTS, type MapConfig, type EnvironmentName } from '@/lib/beat-saber-generator'
 
 interface MapConfigPanelProps {
   config: MapConfig
@@ -156,6 +156,36 @@ export function MapConfigPanel({
           {config.difficulty === 'Hard' && <p>Faster notes with more complex patterns.</p>}
           {config.difficulty === 'Expert' && <p>High density, requires good reflexes.</p>}
           {config.difficulty === 'ExpertPlus' && <p>Maximum intensity. For advanced players only!</p>}
+        </div>
+      </div>
+      
+      {/* Environment */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold text-primary uppercase tracking-wider">Environment</h3>
+        
+        <Select
+          value={config.environment}
+          onValueChange={(value: EnvironmentName) => updateConfig({ environment: value })}
+        >
+          <SelectTrigger className="bg-input border-border text-foreground">
+            <SelectValue placeholder="Select environment" />
+          </SelectTrigger>
+          <SelectContent className="bg-popover border-border max-h-[300px]">
+            {ENVIRONMENTS.map((env) => (
+              <SelectItem key={env.id} value={env.id} className="text-popover-foreground">
+                <span className="flex flex-col">
+                  <span>{env.name}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        
+        <div className="p-3 rounded-lg bg-secondary/50 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground mb-1">
+            {ENVIRONMENTS.find(e => e.id === config.environment)?.name || 'Environment'}
+          </p>
+          <p>{ENVIRONMENTS.find(e => e.id === config.environment)?.description}</p>
         </div>
       </div>
       

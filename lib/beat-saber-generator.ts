@@ -9,6 +9,35 @@ export interface Note {
   _cutDirection: number // 0-8 (see CUT_DIRECTIONS)
 }
 
+// Beat Saber Environment Names
+export const ENVIRONMENTS = [
+  { id: 'DefaultEnvironment', name: 'Default', description: 'Classic Beat Saber environment' },
+  { id: 'OriginsEnvironment', name: 'Origins', description: 'Clean minimalist design' },
+  { id: 'TriangleEnvironment', name: 'Triangle', description: 'Geometric triangular shapes' },
+  { id: 'NiceEnvironment', name: 'Nice', description: 'Smooth and pleasant visuals' },
+  { id: 'BigMirrorEnvironment', name: 'Big Mirror', description: 'Large reflective surfaces' },
+  { id: 'DragonsEnvironment', name: 'Dragons', description: 'Imagine Dragons collaboration' },
+  { id: 'KDAEnvironment', name: 'K/DA', description: 'League of Legends K/DA theme' },
+  { id: 'MonstercatEnvironment', name: 'Monstercat', description: 'Monstercat music pack theme' },
+  { id: 'CrabRaveEnvironment', name: 'Crab Rave', description: 'Noisestorm Crab Rave theme' },
+  { id: 'PanicEnvironment', name: 'Panic', description: 'Panic! At The Disco theme' },
+  { id: 'RocketEnvironment', name: 'Rocket', description: 'Rocket League collaboration' },
+  { id: 'GreenDayEnvironment', name: 'Green Day', description: 'Green Day music pack theme' },
+  { id: 'GreenDayGrenadeEnvironment', name: 'Green Day Grenade', description: 'Green Day grenade variant' },
+  { id: 'TimbalandEnvironment', name: 'Timbaland', description: 'Timbaland music pack theme' },
+  { id: 'FitBeatEnvironment', name: 'FitBeat', description: 'Fitness-focused environment' },
+  { id: 'LinkinParkEnvironment', name: 'Linkin Park', description: 'Linkin Park music pack theme' },
+  { id: 'BTSEnvironment', name: 'BTS', description: 'BTS music pack theme' },
+  { id: 'KaleidoscopeEnvironment', name: 'Kaleidoscope', description: 'Colorful kaleidoscope patterns' },
+  { id: 'InterscopeEnvironment', name: 'Interscope', description: 'Interscope Records theme' },
+  { id: 'SkrillexEnvironment', name: 'Skrillex', description: 'Skrillex music pack theme' },
+  { id: 'BillieEnvironment', name: 'Billie', description: 'Billie Eilish music pack theme' },
+  { id: 'HalloweenEnvironment', name: 'Halloween', description: 'Spooky Halloween theme' },
+  { id: 'GagaEnvironment', name: 'Lady Gaga', description: 'Lady Gaga music pack theme' },
+] as const
+
+export type EnvironmentName = typeof ENVIRONMENTS[number]['id']
+
 export interface MapConfig {
   bpm: number
   songName: string
@@ -17,6 +46,7 @@ export interface MapConfig {
   levelAuthorName: string
   duration: number // in seconds
   difficulty: 'Easy' | 'Normal' | 'Hard' | 'Expert' | 'ExpertPlus'
+  environment: EnvironmentName
 }
 
 export interface LightshowConfig {
@@ -195,7 +225,7 @@ export function generateInfoDat(config: MapConfig): object {
     _previewDuration: 15,
     _songFilename: "song.ogg",
     _coverImageFilename: "cover.png",
-    _environmentName: "DefaultEnvironment",
+    _environmentName: config.environment || "DefaultEnvironment",
     _songTimeOffset: 0,
     _customData: {
       _editors: {
@@ -305,7 +335,7 @@ export function generateLightEvents(
       events.push(...generateWaveEvents(notes, config, totalBeats))
       break
     case 'pulse':
-      events.push(...generatePulseEvents(notes, config, totalBeats, bpm))
+      events.push(...generatePulseEvents(notes, config, totalBeats))
       break
     case 'rainbow':
       events.push(...generateRainbowEvents(notes, config, totalBeats))
@@ -483,7 +513,7 @@ function generateWaveEvents(notes: Note[], config: LightshowConfig, totalBeats: 
   return events
 }
 
-function generatePulseEvents(_notes: Note[], config: LightshowConfig, totalBeats: number, _bpm: number): LightEvent[] {
+function generatePulseEvents(_notes: Note[], config: LightshowConfig, totalBeats: number): LightEvent[] {
   const events: LightEvent[] = []
   const beatsPerPulse = Math.max(0.5, 2 / config.intensity)
   

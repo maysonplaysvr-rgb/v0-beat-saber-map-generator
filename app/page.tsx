@@ -6,9 +6,11 @@ import { FileUploadPanel } from '@/components/file-upload-panel'
 import { LightshowPanel } from '@/components/lightshow-panel'
 import { NoteVisualizer } from '@/components/note-visualizer'
 import { 
-  generateNotes, 
+  generateNotes,
+  generateLightEvents,
   type MapConfig, 
   type Note,
+  type LightEvent,
   type LightshowConfig,
   defaultLightshowConfig 
 } from '@/lib/beat-saber-generator'
@@ -23,13 +25,15 @@ const defaultConfig: MapConfig = {
   songAuthorName: 'Unknown Artist',
   levelAuthorName: 'Map Generator',
   duration: 120,
-  difficulty: 'ExpertPlus'
+  difficulty: 'ExpertPlus',
+  environment: 'DefaultEnvironment'
 }
 
 export default function BeatSaberGenerator() {
   const [config, setConfig] = useState<MapConfig>(defaultConfig)
   const [lightshowConfig, setLightshowConfig] = useState<LightshowConfig>(defaultLightshowConfig)
   const [notes, setNotes] = useState<Note[]>([])
+  const [lightEvents, setLightEvents] = useState<LightEvent[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   
@@ -71,9 +75,18 @@ export default function BeatSaberGenerator() {
     setTimeout(() => {
       const generatedNotes = generateNotes(config)
       setNotes(generatedNotes)
+      
+      // Generate light events if enabled
+      if (lightshowConfig.enabled) {
+        const events = generateLightEvents(generatedNotes, lightshowConfig, config.bpm)
+        setLightEvents(events)
+      } else {
+        setLightEvents([])
+      }
+      
       setIsGenerating(false)
     }, 100)
-  }, [config])
+  }, [config, lightshowConfig])
 
   const handleDownload = useCallback(async () => {
     if (notes.length === 0) return
@@ -97,9 +110,7 @@ export default function BeatSaberGenerator() {
   }, [])
 
   // Calculate stats
-  const lightEventCount = lightshowConfig.enabled 
-    ? Math.floor(notes.length * lightshowConfig.intensity * 2)
-    : 0
+  const lightEventCount = lightEvents.length
 
   return (
     <main className="min-h-screen bg-background">
@@ -219,6 +230,7 @@ export default function BeatSaberGenerator() {
                   bpm={config.bpm}
                   isPlaying={isPlaying}
                   onPlayToggle={handlePlayToggle}
+                  lightEvents={lightEvents}
                 />
               ) : (
                 <div className="h-full flex flex-col items-center justify-center p-8 text-center">
