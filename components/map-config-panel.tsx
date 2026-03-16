@@ -146,16 +146,18 @@ export function MapConfigPanel({
             <SelectItem value="Hard" className="text-popover-foreground">Hard</SelectItem>
             <SelectItem value="Expert" className="text-popover-foreground">Expert</SelectItem>
             <SelectItem value="ExpertPlus" className="text-popover-foreground">Expert+</SelectItem>
+            <SelectItem value="Impossible" className="text-red-400 font-bold">Impossible</SelectItem>
           </SelectContent>
         </Select>
         
-        <div className="p-3 rounded-lg bg-secondary/50 text-sm text-muted-foreground">
-          <p className="font-medium text-foreground mb-1">Difficulty Info:</p>
-          {config.difficulty === 'Easy' && <p>Slow, simple patterns. Great for beginners.</p>}
-          {config.difficulty === 'Normal' && <p>Moderate speed with basic flow patterns.</p>}
-          {config.difficulty === 'Hard' && <p>Faster notes with more complex patterns.</p>}
-          {config.difficulty === 'Expert' && <p>High density, requires good reflexes.</p>}
-          {config.difficulty === 'ExpertPlus' && <p>Maximum intensity. For advanced players only!</p>}
+        <div className={`p-3 rounded-lg text-sm ${config.difficulty === 'Impossible' ? 'bg-red-950/50 border border-red-500/30' : 'bg-secondary/50'} text-muted-foreground`}>
+          <p className={`font-medium mb-1 ${config.difficulty === 'Impossible' ? 'text-red-400' : 'text-foreground'}`}>Difficulty Info:</p>
+          {config.difficulty === 'Easy' && <p>Slow, simple patterns with basic up/down cuts. Great for beginners.</p>}
+          {config.difficulty === 'Normal' && <p>Moderate speed with basic flow patterns. No diagonal cuts.</p>}
+          {config.difficulty === 'Hard' && <p>Faster notes with diagonal cuts and all 4 lanes.</p>}
+          {config.difficulty === 'Expert' && <p>High density with jump streams and complex patterns.</p>}
+          {config.difficulty === 'ExpertPlus' && <p>Maximum vanilla intensity. Fast streams and doubles.</p>}
+          {config.difficulty === 'Impossible' && <p className="text-red-300">Beyond human limits. Note stacks, extreme speed, relentless streams. Good luck.</p>}
         </div>
       </div>
       

@@ -211,7 +211,9 @@ export default function BeatSaberGenerator() {
               
               {notes.length > 0 && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="px-2 py-1 rounded bg-secondary">{config.difficulty}</span>
+                  <span className={`px-2 py-1 rounded ${config.difficulty === 'Impossible' ? 'bg-red-500/20 text-red-400 font-bold animate-pulse' : 'bg-secondary'}`}>
+                    {config.difficulty === 'Impossible' ? 'IMPOSSIBLE' : config.difficulty}
+                  </span>
                   <span className="px-2 py-1 rounded bg-secondary">{config.bpm} BPM</span>
                   {lightshowConfig.enabled && (
                     <span className="px-2 py-1 rounded bg-secondary flex items-center gap-1">

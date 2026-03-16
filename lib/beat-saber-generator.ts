@@ -45,7 +45,7 @@ export interface MapConfig {
   songAuthorName: string
   levelAuthorName: string
   duration: number // in seconds
-  difficulty: 'Easy' | 'Normal' | 'Hard' | 'Expert' | 'ExpertPlus'
+  difficulty: 'Easy' | 'Normal' | 'Hard' | 'Expert' | 'ExpertPlus' | 'Impossible'
   environment: EnvironmentName
 }
 
@@ -115,80 +115,236 @@ export function generateNotes(config: MapConfig): Note[] {
   const totalBeats = (duration / 60) * bpm
   const minStartBeat = getMinStartBeat(bpm)
   
-  // Difficulty settings
-  const difficultySettings: Record<string, { notesPerBeat: number; complexity: number }> = {
-    Easy: { notesPerBeat: 0.25, complexity: 0.3 },
-    Normal: { notesPerBeat: 0.5, complexity: 0.4 },
-    Hard: { notesPerBeat: 1, complexity: 0.6 },
-    Expert: { notesPerBeat: 1.5, complexity: 0.8 },
-    ExpertPlus: { notesPerBeat: 2, complexity: 1 }
+  // Difficulty settings - each difficulty has distinct characteristics
+  // notesPerBeat: how many notes per beat (higher = more notes)
+  // complexity: chance of double notes (0-1)
+  // useAllLanes: whether to use all 4 lanes or stick to sides
+  // useDiagonals: whether to use diagonal cut directions
+  // jumpStreams: whether to include rapid back-to-back notes
+  // maxConsecutiveSameHand: max notes in a row for same hand
+  const difficultySettings: Record<string, { 
+    notesPerBeat: number
+    complexity: number
+    useAllLanes: boolean
+    useDiagonals: boolean
+    jumpStreams: boolean
+    maxConsecutiveSameHand: number
+  }> = {
+    Easy: { 
+      notesPerBeat: 0.25, 
+      complexity: 0.1,
+      useAllLanes: false,
+      useDiagonals: false,
+      jumpStreams: false,
+      maxConsecutiveSameHand: 2
+    },
+    Normal: { 
+      notesPerBeat: 0.5, 
+      complexity: 0.2,
+      useAllLanes: false,
+      useDiagonals: false,
+      jumpStreams: false,
+      maxConsecutiveSameHand: 3
+    },
+    Hard: { 
+      notesPerBeat: 1, 
+      complexity: 0.4,
+      useAllLanes: true,
+      useDiagonals: true,
+      jumpStreams: false,
+      maxConsecutiveSameHand: 4
+    },
+    Expert: { 
+      notesPerBeat: 2, 
+      complexity: 0.6,
+      useAllLanes: true,
+      useDiagonals: true,
+      jumpStreams: true,
+      maxConsecutiveSameHand: 5
+    },
+    ExpertPlus: { 
+      notesPerBeat: 3, 
+      complexity: 0.75,
+      useAllLanes: true,
+      useDiagonals: true,
+      jumpStreams: true,
+      maxConsecutiveSameHand: 6
+    },
+    Impossible: { 
+      notesPerBeat: 5, 
+      complexity: 0.95,
+      useAllLanes: true,
+      useDiagonals: true,
+      jumpStreams: true,
+      maxConsecutiveSameHand: 10
+    }
   }
   
-  const settings = difficultySettings[difficulty]
+  const settings = difficultySettings[difficulty] || difficultySettings.ExpertPlus
   
   // Track last direction for each hand for flow
   let lastRedDirection = CUT_DIRECTIONS.DOWN
   let lastBlueDirection = CUT_DIRECTIONS.DOWN
+  let consecutiveRedNotes = 0
+  let consecutiveBlueNotes = 0
   
   // Generate notes
   let currentBeat = minStartBeat
   const beatInterval = 1 / settings.notesPerBeat
   
   while (currentBeat < totalBeats - 2) {
-    // Determine if we place one or two notes
-    const placeDouble = Math.random() < settings.complexity * 0.5
+    // Determine if we place one or two notes (doubles)
+    const placeDouble = Math.random() < settings.complexity
     
-    if (placeDouble) {
+    // For Impossible, sometimes place triples or quads (stacks)
+    const placeStack = difficulty === 'Impossible' && Math.random() < 0.3
+    
+    if (placeStack) {
+      // Stack: multiple notes at same time in different positions
+      const stackCount = Math.floor(Math.random() * 3) + 2 // 2-4 notes
+      for (let i = 0; i < stackCount; i++) {
+        const isRed = i % 2 === 0
+        const type = isRed ? 0 : 1
+        const lastDirection = isRed ? lastRedDirection : lastBlueDirection
+        const side = isRed ? 'left' : 'right'
+        
+        const note = generateSingleNote(currentBeat, type, lastDirection, side, settings)
+        // Offset position slightly for stacks
+        note._lineLayer = i % 3
+        notes.push(note)
+        
+        if (isRed) {
+          lastRedDirection = note._cutDirection
+        } else {
+          lastBlueDirection = note._cutDirection
+        }
+      }
+    } else if (placeDouble) {
       // Place both red and blue notes
-      const redNote = generateSingleNote(currentBeat, 0, lastRedDirection, 'left')
-      const blueNote = generateSingleNote(currentBeat, 1, lastBlueDirection, 'right')
+      const redNote = generateSingleNote(currentBeat, 0, lastRedDirection, 'left', settings)
+      const blueNote = generateSingleNote(currentBeat, 1, lastBlueDirection, 'right', settings)
       
       notes.push(redNote)
       notes.push(blueNote)
       
       lastRedDirection = redNote._cutDirection
       lastBlueDirection = blueNote._cutDirection
+      consecutiveRedNotes = 1
+      consecutiveBlueNotes = 1
     } else {
-      // Alternate between red and blue
-      const isRed = Math.random() < 0.5
+      // Alternate between red and blue based on consecutive count
+      let isRed: boolean
+      
+      if (consecutiveRedNotes >= settings.maxConsecutiveSameHand) {
+        isRed = false
+      } else if (consecutiveBlueNotes >= settings.maxConsecutiveSameHand) {
+        isRed = true
+      } else {
+        isRed = Math.random() < 0.5
+      }
+      
       const type = isRed ? 0 : 1
       const lastDirection = isRed ? lastRedDirection : lastBlueDirection
       const side = isRed ? 'left' : 'right'
       
-      const note = generateSingleNote(currentBeat, type, lastDirection, side)
+      const note = generateSingleNote(currentBeat, type, lastDirection, side, settings)
       notes.push(note)
       
       if (isRed) {
         lastRedDirection = note._cutDirection
+        consecutiveRedNotes++
+        consecutiveBlueNotes = 0
       } else {
         lastBlueDirection = note._cutDirection
+        consecutiveBlueNotes++
+        consecutiveRedNotes = 0
       }
     }
     
-    // Add some variation to timing
-    const variation = (Math.random() - 0.5) * 0.1
+    // Add jump streams for higher difficulties
+    if (settings.jumpStreams && Math.random() < 0.2) {
+      // Add a rapid burst of notes
+      const burstCount = Math.floor(Math.random() * 4) + 2
+      for (let i = 0; i < burstCount; i++) {
+        currentBeat += 0.125 // 1/8th beat spacing
+        if (currentBeat >= totalBeats - 2) break
+        
+        const isRed = i % 2 === 0
+        const type = isRed ? 0 : 1
+        const lastDirection = isRed ? lastRedDirection : lastBlueDirection
+        const side = isRed ? 'left' : 'right'
+        
+        const note = generateSingleNote(currentBeat, type, lastDirection, side, settings)
+        notes.push(note)
+        
+        if (isRed) {
+          lastRedDirection = note._cutDirection
+        } else {
+          lastBlueDirection = note._cutDirection
+        }
+      }
+    }
+    
+    // Add timing variation based on difficulty
+    const variation = difficulty === 'Easy' ? 0 : (Math.random() - 0.5) * 0.05
     currentBeat += beatInterval + variation
   }
   
   return notes
 }
 
+interface DifficultySettingsType {
+  notesPerBeat: number
+  complexity: number
+  useAllLanes: boolean
+  useDiagonals: boolean
+  jumpStreams: boolean
+  maxConsecutiveSameHand: number
+}
+
 function generateSingleNote(
   time: number,
   type: number, // 0=red, 1=blue
   lastDirection: number,
-  preferredSide: 'left' | 'right'
+  preferredSide: 'left' | 'right',
+  settings: DifficultySettingsType
 ): Note {
   // Get flow-friendly next direction
-  const possibleDirections = FLOW_PAIRS[lastDirection] || [CUT_DIRECTIONS.DOWN]
+  let possibleDirections = FLOW_PAIRS[lastDirection] || [CUT_DIRECTIONS.DOWN]
+  
+  // Filter out diagonals for easier difficulties
+  if (!settings.useDiagonals) {
+    possibleDirections = possibleDirections.filter(d => 
+      d === CUT_DIRECTIONS.UP || 
+      d === CUT_DIRECTIONS.DOWN || 
+      d === CUT_DIRECTIONS.LEFT || 
+      d === CUT_DIRECTIONS.RIGHT ||
+      d === CUT_DIRECTIONS.ANY
+    )
+    if (possibleDirections.length === 0) {
+      possibleDirections = [CUT_DIRECTIONS.DOWN, CUT_DIRECTIONS.UP]
+    }
+  }
+  
   const newDirection = possibleDirections[Math.floor(Math.random() * possibleDirections.length)]
   
-  // Position based on type and direction
+  // Position based on type, direction, and difficulty
   let lineIndex: number
-  if (preferredSide === 'left') {
-    lineIndex = Math.random() < 0.7 ? Math.floor(Math.random() * 2) : Math.floor(Math.random() * 2) + 2
+  
+  if (settings.useAllLanes) {
+    // Use all 4 lanes but still prefer correct side
+    if (preferredSide === 'left') {
+      lineIndex = Math.random() < 0.6 ? Math.floor(Math.random() * 2) : Math.floor(Math.random() * 2) + 2
+    } else {
+      lineIndex = Math.random() < 0.6 ? Math.floor(Math.random() * 2) + 2 : Math.floor(Math.random() * 2)
+    }
   } else {
-    lineIndex = Math.random() < 0.7 ? Math.floor(Math.random() * 2) + 2 : Math.floor(Math.random() * 2)
+    // Stick to preferred side only (easier)
+    if (preferredSide === 'left') {
+      lineIndex = Math.floor(Math.random() * 2) // 0 or 1
+    } else {
+      lineIndex = Math.floor(Math.random() * 2) + 2 // 2 or 3
+    }
   }
   
   // Layer based on direction (higher cuts go higher, etc)
@@ -259,7 +415,8 @@ function getDifficultyRank(difficulty: string): number {
     Normal: 3,
     Hard: 5,
     Expert: 7,
-    ExpertPlus: 9
+    ExpertPlus: 9,
+    Impossible: 9 // Uses ExpertPlus rank as base since it's custom
   }
   return ranks[difficulty] || 9
 }
@@ -267,10 +424,11 @@ function getDifficultyRank(difficulty: string): number {
 function getJumpSpeed(difficulty: string): number {
   const speeds: Record<string, number> = {
     Easy: 10,
-    Normal: 10,
-    Hard: 12,
-    Expert: 14,
-    ExpertPlus: 16
+    Normal: 12,
+    Hard: 14,
+    Expert: 16,
+    ExpertPlus: 18,
+    Impossible: 23 // Maximum speed for ultimate challenge
   }
   return speeds[difficulty] || 16
 }
