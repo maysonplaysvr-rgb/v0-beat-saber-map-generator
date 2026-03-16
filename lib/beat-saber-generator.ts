@@ -19,6 +19,32 @@ export interface MapConfig {
   difficulty: 'Easy' | 'Normal' | 'Hard' | 'Expert' | 'ExpertPlus'
 }
 
+export interface LightshowConfig {
+  enabled: boolean
+  intensity: number // 0-1
+  style: 'reactive' | 'strobe' | 'wave' | 'pulse' | 'rainbow'
+  colorScheme: 'match' | 'contrast' | 'warm' | 'cool' | 'mono'
+  ringRotation: boolean
+  laserSpeed: boolean
+  boostColors: boolean
+}
+
+export interface LightEvent {
+  _time: number
+  _type: number // 0-4 for different light groups
+  _value: number // 0=off, 1-3=blue, 5-7=red
+}
+
+export const defaultLightshowConfig: LightshowConfig = {
+  enabled: true,
+  intensity: 0.7,
+  style: 'reactive',
+  colorScheme: 'match',
+  ringRotation: true,
+  laserSpeed: true,
+  boostColors: false
+}
+
 // Cut directions: 0=Up, 1=Down, 2=Left, 3=Right, 4=UpLeft, 5=UpRight, 6=DownLeft, 7=DownRight, 8=Any
 export const CUT_DIRECTIONS = {
   UP: 0,
@@ -220,28 +246,385 @@ function getJumpSpeed(difficulty: string): number {
 }
 
 // Generate difficulty file content
-export function generateDifficultyDat(notes: Note[]): object {
+export function generateDifficultyDat(notes: Note[], lightshowConfig: LightshowConfig, bpm: number): object {
   return {
     _version: "2.0.0",
     _notes: notes,
     _obstacles: [],
-    _events: generateBasicLightEvents(notes),
+    _events: lightshowConfig.enabled ? generateLightEvents(notes, lightshowConfig, bpm) : [],
     _customData: {}
   }
 }
 
-// Generate basic lighting events synced to notes
-function generateBasicLightEvents(notes: Note[]): object[] {
-  const events: object[] = []
+// Light event types
+const LIGHT_TYPES = {
+  BACK_LASERS: 0,
+  RING_LIGHTS: 1,
+  LEFT_LASERS: 2,
+  RIGHT_LASERS: 3,
+  CENTER_LIGHTS: 4,
+  // Special events
+  RING_ROTATION: 8,
+  RING_ZOOM: 9,
+  LEFT_LASER_SPEED: 12,
+  RIGHT_LASER_SPEED: 13,
+  // Boost
+  BOOST_COLORS: 5
+}
+
+// Light values
+const LIGHT_VALUES = {
+  OFF: 0,
+  BLUE_ON: 1,
+  BLUE_FLASH: 2,
+  BLUE_FADE: 3,
+  RED_ON: 5,
+  RED_FLASH: 6,
+  RED_FADE: 7
+}
+
+// Generate advanced lighting events based on config
+export function generateLightEvents(
+  notes: Note[],
+  config: LightshowConfig,
+  _bpm: number
+): LightEvent[] {
+  const events: LightEvent[] = []
   
-  // Add lighting events at note positions
+  // Get total duration from notes
+  const totalBeats = notes.length > 0 ? notes[notes.length - 1]._time + 4 : 0
+  
+  switch (config.style) {
+    case 'reactive':
+      events.push(...generateReactiveEvents(notes, config))
+      break
+    case 'strobe':
+      events.push(...generateStrobeEvents(notes, config, totalBeats))
+      break
+    case 'wave':
+      events.push(...generateWaveEvents(notes, config, totalBeats))
+      break
+    case 'pulse':
+      events.push(...generatePulseEvents(notes, config, totalBeats, bpm))
+      break
+    case 'rainbow':
+      events.push(...generateRainbowEvents(notes, config, totalBeats))
+      break
+  }
+  
+  // Add ring rotation events
+  if (config.ringRotation) {
+    events.push(...generateRingRotationEvents(totalBeats, config.intensity))
+  }
+  
+  // Add laser speed changes
+  if (config.laserSpeed) {
+    events.push(...generateLaserSpeedEvents(totalBeats, config.intensity))
+  }
+  
+  // Add boost color events
+  if (config.boostColors) {
+    events.push(...generateBoostColorEvents(notes, config.intensity))
+  }
+  
+  // Sort events by time
+  return events.sort((a, b) => a._time - b._time)
+}
+
+function getColorValue(config: LightshowConfig, noteType: number, flash: boolean = false): number {
+  const isRed = noteType === 0
+  
+  switch (config.colorScheme) {
+    case 'match':
+      return isRed 
+        ? (flash ? LIGHT_VALUES.RED_FLASH : LIGHT_VALUES.RED_ON)
+        : (flash ? LIGHT_VALUES.BLUE_FLASH : LIGHT_VALUES.BLUE_ON)
+    case 'contrast':
+      // Opposite colors
+      return isRed 
+        ? (flash ? LIGHT_VALUES.BLUE_FLASH : LIGHT_VALUES.BLUE_ON)
+        : (flash ? LIGHT_VALUES.RED_FLASH : LIGHT_VALUES.RED_ON)
+    case 'warm':
+      return flash ? LIGHT_VALUES.RED_FLASH : LIGHT_VALUES.RED_ON
+    case 'cool':
+      return flash ? LIGHT_VALUES.BLUE_FLASH : LIGHT_VALUES.BLUE_ON
+    case 'mono':
+      return flash ? LIGHT_VALUES.BLUE_FLASH : LIGHT_VALUES.BLUE_FADE
+    default:
+      return LIGHT_VALUES.BLUE_ON
+  }
+}
+
+function generateReactiveEvents(notes: Note[], config: LightshowConfig): LightEvent[] {
+  const events: LightEvent[] = []
+  const skipRate = Math.max(1, Math.round((1 - config.intensity) * 4))
+  
   notes.forEach((note, index) => {
+    if (index % skipRate !== 0) return
+    
+    const lightType = note._lineIndex < 2 
+      ? LIGHT_TYPES.LEFT_LASERS 
+      : LIGHT_TYPES.RIGHT_LASERS
+    
+    // Main light flash
+    events.push({
+      _time: note._time,
+      _type: lightType,
+      _value: getColorValue(config, note._type, true)
+    })
+    
+    // Center light on some notes
+    if (index % 2 === 0) {
+      events.push({
+        _time: note._time,
+        _type: LIGHT_TYPES.CENTER_LIGHTS,
+        _value: getColorValue(config, note._type, false)
+      })
+    }
+    
+    // Back lasers occasionally
     if (index % 4 === 0) {
       events.push({
         _time: note._time,
-        _type: Math.floor(Math.random() * 5), // Different light types
-        _value: Math.floor(Math.random() * 3) + 1 // Light intensity
+        _type: LIGHT_TYPES.BACK_LASERS,
+        _value: getColorValue(config, note._type, false)
       })
+    }
+    
+    // Turn off after brief moment
+    events.push({
+      _time: note._time + 0.25,
+      _type: lightType,
+      _value: LIGHT_VALUES.OFF
+    })
+  })
+  
+  return events
+}
+
+function generateStrobeEvents(notes: Note[], config: LightshowConfig, totalBeats: number): LightEvent[] {
+  const events: LightEvent[] = []
+  const strobeInterval = 0.125 / config.intensity
+  
+  let currentBeat = 0
+  let toggleRed = true
+  
+  while (currentBeat < totalBeats) {
+    // Find if there's a note nearby
+    const nearbyNote = notes.find(n => Math.abs(n._time - currentBeat) < 0.5)
+    
+    if (nearbyNote) {
+      // Strobe all lights
+      events.push({
+        _time: currentBeat,
+        _type: LIGHT_TYPES.BACK_LASERS,
+        _value: toggleRed ? LIGHT_VALUES.RED_FLASH : LIGHT_VALUES.BLUE_FLASH
+      })
+      events.push({
+        _time: currentBeat,
+        _type: LIGHT_TYPES.CENTER_LIGHTS,
+        _value: toggleRed ? LIGHT_VALUES.RED_FLASH : LIGHT_VALUES.BLUE_FLASH
+      })
+      
+      toggleRed = !toggleRed
+      currentBeat += strobeInterval
+    } else {
+      currentBeat += 0.5
+    }
+  }
+  
+  return events
+}
+
+function generateWaveEvents(notes: Note[], config: LightshowConfig, totalBeats: number): LightEvent[] {
+  const events: LightEvent[] = []
+  const waveInterval = 0.5 / config.intensity
+  const lightTypes = [
+    LIGHT_TYPES.LEFT_LASERS,
+    LIGHT_TYPES.BACK_LASERS,
+    LIGHT_TYPES.CENTER_LIGHTS,
+    LIGHT_TYPES.RING_LIGHTS,
+    LIGHT_TYPES.RIGHT_LASERS
+  ]
+  
+  let currentBeat = 0
+  let wavePosition = 0
+  let useRed = true
+  
+  while (currentBeat < totalBeats) {
+    const lightType = lightTypes[wavePosition % lightTypes.length]
+    const prevType = lightTypes[(wavePosition - 1 + lightTypes.length) % lightTypes.length]
+    
+    // Turn on current light
+    events.push({
+      _time: currentBeat,
+      _type: lightType,
+      _value: useRed ? LIGHT_VALUES.RED_FADE : LIGHT_VALUES.BLUE_FADE
+    })
+    
+    // Turn off previous light
+    if (wavePosition > 0) {
+      events.push({
+        _time: currentBeat,
+        _type: prevType,
+        _value: LIGHT_VALUES.OFF
+      })
+    }
+    
+    wavePosition++
+    if (wavePosition >= lightTypes.length * 2) {
+      wavePosition = 0
+      useRed = !useRed
+    }
+    
+    currentBeat += waveInterval
+  }
+  
+  return events
+}
+
+function generatePulseEvents(_notes: Note[], config: LightshowConfig, totalBeats: number, _bpm: number): LightEvent[] {
+  const events: LightEvent[] = []
+  const beatsPerPulse = Math.max(0.5, 2 / config.intensity)
+  
+  let currentBeat = 0
+  let pulseOn = true
+  
+  while (currentBeat < totalBeats) {
+    const allLightTypes = [
+      LIGHT_TYPES.BACK_LASERS,
+      LIGHT_TYPES.RING_LIGHTS,
+      LIGHT_TYPES.CENTER_LIGHTS
+    ]
+    
+    allLightTypes.forEach(lightType => {
+      events.push({
+        _time: currentBeat,
+        _type: lightType,
+        _value: pulseOn ? LIGHT_VALUES.BLUE_ON : LIGHT_VALUES.OFF
+      })
+    })
+    
+    pulseOn = !pulseOn
+    currentBeat += beatsPerPulse
+  }
+  
+  return events
+}
+
+function generateRainbowEvents(_notes: Note[], config: LightshowConfig, totalBeats: number): LightEvent[] {
+  const events: LightEvent[] = []
+  const cycleInterval = 1 / config.intensity
+  
+  let currentBeat = 0
+  let colorPhase = 0
+  
+  while (currentBeat < totalBeats) {
+    const lightTypes = [
+      LIGHT_TYPES.BACK_LASERS,
+      LIGHT_TYPES.LEFT_LASERS,
+      LIGHT_TYPES.RIGHT_LASERS,
+      LIGHT_TYPES.CENTER_LIGHTS
+    ]
+    
+    lightTypes.forEach((lightType, i) => {
+      const phaseOffset = (colorPhase + i) % 2
+      events.push({
+        _time: currentBeat,
+        _type: lightType,
+        _value: phaseOffset === 0 ? LIGHT_VALUES.RED_FADE : LIGHT_VALUES.BLUE_FADE
+      })
+    })
+    
+    colorPhase++
+    currentBeat += cycleInterval
+  }
+  
+  return events
+}
+
+function generateRingRotationEvents(totalBeats: number, intensity: number): LightEvent[] {
+  const events: LightEvent[] = []
+  const interval = Math.max(2, 8 / intensity)
+  
+  let currentBeat = 0
+  let direction = 1
+  
+  while (currentBeat < totalBeats) {
+    events.push({
+      _time: currentBeat,
+      _type: LIGHT_TYPES.RING_ROTATION,
+      _value: direction > 0 ? 1 : 0
+    })
+    
+    direction *= -1
+    currentBeat += interval
+  }
+  
+  return events
+}
+
+function generateLaserSpeedEvents(totalBeats: number, intensity: number): LightEvent[] {
+  const events: LightEvent[] = []
+  const interval = Math.max(4, 16 / intensity)
+  const speeds = [0, 2, 4, 6, 8]
+  
+  let currentBeat = 0
+  let speedIndex = 0
+  
+  while (currentBeat < totalBeats) {
+    const speed = speeds[speedIndex % speeds.length]
+    
+    events.push({
+      _time: currentBeat,
+      _type: LIGHT_TYPES.LEFT_LASER_SPEED,
+      _value: speed
+    })
+    events.push({
+      _time: currentBeat,
+      _type: LIGHT_TYPES.RIGHT_LASER_SPEED,
+      _value: speed
+    })
+    
+    speedIndex++
+    currentBeat += interval
+  }
+  
+  return events
+}
+
+function generateBoostColorEvents(notes: Note[], intensity: number): LightEvent[] {
+  const events: LightEvent[] = []
+  
+  // Find high-density sections for boost
+  const noteDensityThreshold = 4
+  let consecutiveNotes = 0
+  let boostActive = false
+  
+  notes.forEach((note, index) => {
+    const nextNote = notes[index + 1]
+    const timeDiff = nextNote ? nextNote._time - note._time : 1
+    
+    if (timeDiff < 0.5) {
+      consecutiveNotes++
+    } else {
+      consecutiveNotes = 0
+    }
+    
+    if (consecutiveNotes >= noteDensityThreshold && !boostActive) {
+      events.push({
+        _time: note._time,
+        _type: LIGHT_TYPES.BOOST_COLORS,
+        _value: 1 // Boost on
+      })
+      boostActive = true
+    } else if (consecutiveNotes === 0 && boostActive) {
+      events.push({
+        _time: note._time,
+        _type: LIGHT_TYPES.BOOST_COLORS,
+        _value: 0 // Boost off
+      })
+      boostActive = false
     }
   })
   

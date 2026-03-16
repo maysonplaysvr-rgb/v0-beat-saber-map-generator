@@ -2,9 +2,19 @@
 
 import { useState, useCallback } from 'react'
 import { MapConfigPanel } from '@/components/map-config-panel'
+import { FileUploadPanel } from '@/components/file-upload-panel'
+import { LightshowPanel } from '@/components/lightshow-panel'
 import { NoteVisualizer } from '@/components/note-visualizer'
-import { generateNotes, type MapConfig, type Note } from '@/lib/beat-saber-generator'
-import { createBeatSaberZip, downloadBlob } from '@/lib/zip-utils'
+import { 
+  generateNotes, 
+  type MapConfig, 
+  type Note,
+  type LightshowConfig,
+  defaultLightshowConfig 
+} from '@/lib/beat-saber-generator'
+import { createBeatSaberZip, downloadBlob, getAudioDuration } from '@/lib/zip-utils'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Settings, Music, Lightbulb } from 'lucide-react'
 
 const defaultConfig: MapConfig = {
   bpm: 128,
@@ -18,9 +28,40 @@ const defaultConfig: MapConfig = {
 
 export default function BeatSaberGenerator() {
   const [config, setConfig] = useState<MapConfig>(defaultConfig)
+  const [lightshowConfig, setLightshowConfig] = useState<LightshowConfig>(defaultLightshowConfig)
   const [notes, setNotes] = useState<Note[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
+  
+  // File upload state
+  const [songFile, setSongFile] = useState<File | null>(null)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
+  const [coverPreview, setCoverPreview] = useState<string | null>(null)
+  const [songDuration, setSongDuration] = useState<number | null>(null)
+
+  // Handle song file change and auto-detect duration
+  const handleSongChange = useCallback(async (file: File | null) => {
+    setSongFile(file)
+    
+    if (file) {
+      try {
+        const duration = await getAudioDuration(file)
+        setSongDuration(duration)
+        // Auto-update map duration to match song
+        setConfig(prev => ({ ...prev, duration: Math.floor(duration) }))
+      } catch {
+        setSongDuration(null)
+      }
+    } else {
+      setSongDuration(null)
+    }
+  }, [])
+
+  // Handle cover file change
+  const handleCoverChange = useCallback((file: File | null, preview: string | null) => {
+    setCoverFile(file)
+    setCoverPreview(preview)
+  }, [])
 
   const handleGenerate = useCallback(() => {
     setIsGenerating(true)
@@ -38,17 +79,27 @@ export default function BeatSaberGenerator() {
     if (notes.length === 0) return
     
     try {
-      const zipBlob = await createBeatSaberZip(config, notes)
+      const zipBlob = await createBeatSaberZip(
+        config, 
+        notes, 
+        lightshowConfig,
+        { songFile, coverFile }
+      )
       const sanitizedName = config.songName.replace(/[^a-zA-Z0-9]/g, '_')
       downloadBlob(zipBlob, `${sanitizedName}_${config.difficulty}.zip`)
     } catch (error) {
       console.error('Failed to create zip:', error)
     }
-  }, [config, notes])
+  }, [config, notes, lightshowConfig, songFile, coverFile])
 
   const handlePlayToggle = useCallback(() => {
     setIsPlaying(prev => !prev)
   }, [])
+
+  // Calculate stats
+  const lightEventCount = lightshowConfig.enabled 
+    ? Math.floor(notes.length * lightshowConfig.intensity * 2)
+    : 0
 
   return (
     <main className="min-h-screen bg-background">
@@ -84,17 +135,54 @@ export default function BeatSaberGenerator() {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-6">
-        <div className="grid lg:grid-cols-[380px_1fr] gap-6 min-h-[calc(100vh-140px)]">
-          {/* Config Panel */}
-          <aside className="order-2 lg:order-1">
-            <MapConfigPanel
-              config={config}
-              onConfigChange={setConfig}
-              onGenerate={handleGenerate}
-              onDownload={handleDownload}
-              isGenerating={isGenerating}
-              hasNotes={notes.length > 0}
-            />
+        <div className="grid lg:grid-cols-[420px_1fr] gap-6 min-h-[calc(100vh-140px)]">
+          {/* Config Panels */}
+          <aside className="order-2 lg:order-1 space-y-4">
+            <Tabs defaultValue="config" className="w-full">
+              <TabsList className="grid w-full grid-cols-3 bg-secondary">
+                <TabsTrigger value="config" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Settings className="w-4 h-4" />
+                  <span className="hidden sm:inline">Config</span>
+                </TabsTrigger>
+                <TabsTrigger value="media" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Music className="w-4 h-4" />
+                  <span className="hidden sm:inline">Media</span>
+                </TabsTrigger>
+                <TabsTrigger value="lights" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Lightbulb className="w-4 h-4" />
+                  <span className="hidden sm:inline">Lights</span>
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="config" className="mt-4">
+                <MapConfigPanel
+                  config={config}
+                  onConfigChange={setConfig}
+                  onGenerate={handleGenerate}
+                  onDownload={handleDownload}
+                  isGenerating={isGenerating}
+                  hasNotes={notes.length > 0}
+                />
+              </TabsContent>
+              
+              <TabsContent value="media" className="mt-4">
+                <FileUploadPanel
+                  songFile={songFile}
+                  coverFile={coverFile}
+                  coverPreview={coverPreview}
+                  onSongChange={handleSongChange}
+                  onCoverChange={handleCoverChange}
+                  songDuration={songDuration}
+                />
+              </TabsContent>
+              
+              <TabsContent value="lights" className="mt-4">
+                <LightshowPanel
+                  config={lightshowConfig}
+                  onConfigChange={setLightshowConfig}
+                />
+              </TabsContent>
+            </Tabs>
           </aside>
 
           {/* Visualizer */}
@@ -104,7 +192,7 @@ export default function BeatSaberGenerator() {
                 <h2 className="font-semibold text-foreground">Note Preview</h2>
                 <p className="text-xs text-muted-foreground">
                   {notes.length > 0 
-                    ? `${notes.length} notes generated • ${(config.duration / 60).toFixed(1)} minutes`
+                    ? `${notes.length} notes • ~${lightEventCount} light events • ${(config.duration / 60).toFixed(1)} min`
                     : 'Generate a map to preview notes'
                   }
                 </p>
@@ -114,6 +202,12 @@ export default function BeatSaberGenerator() {
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="px-2 py-1 rounded bg-secondary">{config.difficulty}</span>
                   <span className="px-2 py-1 rounded bg-secondary">{config.bpm} BPM</span>
+                  {lightshowConfig.enabled && (
+                    <span className="px-2 py-1 rounded bg-secondary flex items-center gap-1">
+                      <Lightbulb className="w-3 h-3" />
+                      {lightshowConfig.style}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -144,16 +238,16 @@ export default function BeatSaberGenerator() {
                       <p className="text-xs text-muted-foreground">Alternating swing patterns for comfortable gameplay</p>
                     </div>
                     <div className="p-3 rounded-lg bg-secondary/30 border border-border">
-                      <div className="font-medium text-foreground mb-1">No Hot Starts</div>
-                      <p className="text-xs text-muted-foreground">First note appears at least 1.5s into the song</p>
+                      <div className="font-medium text-foreground mb-1">Custom Media</div>
+                      <p className="text-xs text-muted-foreground">Upload your own song and cover image</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-secondary/30 border border-border">
+                      <div className="font-medium text-foreground mb-1">Lightshow</div>
+                      <p className="text-xs text-muted-foreground">Multiple lighting styles synced to notes</p>
                     </div>
                     <div className="p-3 rounded-lg bg-secondary/30 border border-border">
                       <div className="font-medium text-foreground mb-1">BeatSaver Ready</div>
                       <p className="text-xs text-muted-foreground">Valid v2.0.0 schema with all required files</p>
-                    </div>
-                    <div className="p-3 rounded-lg bg-secondary/30 border border-border">
-                      <div className="font-medium text-foreground mb-1">Complete Package</div>
-                      <p className="text-xs text-muted-foreground">Includes cover.png and placeholder song.ogg</p>
                     </div>
                   </div>
                 </div>
@@ -167,7 +261,20 @@ export default function BeatSaberGenerator() {
       <footer className="border-t border-border bg-card/30 py-4 mt-auto">
         <div className="container mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
           <p>Beat Saber Map Generator • Exports BeatSaver-compatible .zip files</p>
-          <p>Replace song.ogg and cover.png with your own files before uploading</p>
+          <div className="flex items-center gap-4">
+            {songFile && (
+              <span className="flex items-center gap-1">
+                <Music className="w-3 h-3" />
+                Song loaded
+              </span>
+            )}
+            {coverFile && (
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded bg-gradient-to-br from-[#ff2d55] to-[#007aff]" />
+                Cover loaded
+              </span>
+            )}
+          </div>
         </div>
       </footer>
     </main>
